@@ -28,7 +28,7 @@ This project simulates a complex DeFi yield farming protocol with multiple rewar
 ### Your Task
 1. **Conduct a comprehensive security audit**
 2. **Document all vulnerabilities** found
-3. **Classify severity** (Critical/High/Medium/Low)
+3. **Classify severity** (High/Medium/Low)
 4. **Provide exploit scenarios** where applicable
 5. **Suggest remediation** strategies
 
