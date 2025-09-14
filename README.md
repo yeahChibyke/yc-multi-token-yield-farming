@@ -76,20 +76,6 @@ For each vulnerability, document:
 [How to fix it]
 ```
 
-## Resources
-
-### DeFi Security References
-- [DeFiHack Analysis](https://defihack.xyz/)
-- [Smart Contract Security Best Practices](https://consensys.github.io/smart-contract-best-practices/)
-- [DeFi Security Summit Resources](https://defisecuritysummit.org/)
-
-### Common Vulnerability Patterns
-- [SWC Registry](https://swcregistry.io/)
-- [Consensys Security Tools](https://consensys.net/diligence/tools/)
-- [Trail of Bits Security Guide](https://github.com/crytic/building-secure-contracts)
-
-
-
 ## Deliverables
 
 ### Expected Outputs
