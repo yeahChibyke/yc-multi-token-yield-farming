@@ -46,10 +46,10 @@ forge build
 ```
 src/
 ├── MultiTokenYieldFarm.sol    # Main farming contract
-└── YieldFarmToken.sol         # Reward token (included in main file)
+└── YieldFarmToken.sol         # Reward token 
 ```
 
-### Key Contract Addresses (After Deployment)
+### Key Contract Addresses 
 - **YieldFarmToken**: Reward token contract
 - **MultiTokenYieldFarm**: Main farming protocol
 - **Mock LP Tokens**: For testing different pools
@@ -64,7 +64,7 @@ For each vulnerability, document:
 **Category**: Reentrancy/Arithmetic/Access Control/etc.
 
 ### Description
-[What is the vulnerability?]
+[What is the vulnerability, include code snippet?]
 
 ### Impact
 [What damage can it cause?]
