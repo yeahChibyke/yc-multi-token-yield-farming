@@ -76,6 +76,8 @@ For each vulnerability, document:
 [How to fix it]
 ```
 
+>NOTE: Coded PoC is required for High and Medium issues
+
 ## Deliverables
 
 ### Expected Outputs
