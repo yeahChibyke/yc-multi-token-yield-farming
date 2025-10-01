@@ -284,37 +284,66 @@ contract YieldFarmTest is Test {
         assertApproxEqRel(pending, expectedReward, 0.01e18); // 1% tolerance
     }
 
-    function test_bonus_backdating_issue() public {
-        vm.roll(START_BLOCK + 10); // Block 10
+    function testFeeMintingInflation() public {
+        vm.roll(START_BLOCK + 1);
 
-        // Alice deposits early - NO BONUS ACTIVE
+        // Track initial token supply
+        uint256 initialTotalSupply = rewardToken.totalSupply();
+        uint256 initialContractBalance = rewardToken.balanceOf(address(farm));
+        uint256 initialFeeCollectorBalance = rewardToken.balanceOf(feeCollector);
+
+        console.log("Initial total supply:", initialTotalSupply);
+        console.log("Initial contract balance:", initialContractBalance);
+        console.log("Initial fee collector balance:", initialFeeCollectorBalance);
+
+        // Alice deposits
         vm.prank(alice);
         farm.deposit(0, 100e18, address(0));
 
-        // Move forward some blocks
-        vm.roll(START_BLOCK + 50);
+        // Move forward 10 blocks to accumulate rewards
+        vm.roll(START_BLOCK + 10);
 
-        // NOW owner sets up bonus token starting from current block
-        farm.setBonusToken(0, bonusToken, 1e18, START_BLOCK + 100);
+        // Update pool to mint rewards
+        farm.updatePool(0);
 
-        // Bob deposits AFTER bonus is set up
-        vm.prank(bob);
-        farm.deposit(0, 100e18, address(0));
+        // Check final token amounts
+        uint256 finalTotalSupply = rewardToken.totalSupply();
+        uint256 finalContractBalance = rewardToken.balanceOf(address(farm));
+        uint256 finalFeeCollectorBalance = rewardToken.balanceOf(feeCollector);
 
-        // Move to block 70 - both have staked for 20 blocks during bonus period
-        vm.roll(START_BLOCK + 70);
+        console.log("Final total supply:", finalTotalSupply);
+        console.log("Final contract balance:", finalContractBalance);
+        console.log("Final fee collector balance:", finalFeeCollectorBalance);
 
-        // Check pending rewards
-        ( /*uint256 alicePending*/ , uint256 aliceBonusPending) = farm.pendingRewards(0, alice);
-        ( /*uint256 bobPending*/ , uint256 bobBonusPending) = farm.pendingRewards(0, bob);
+        uint256 totalMinted = finalTotalSupply - initialTotalSupply;
+        uint256 contractReceived = finalContractBalance - initialContractBalance;
+        uint256 feeCollectorReceived = finalFeeCollectorBalance - initialFeeCollectorBalance;
 
-        console.log("Alice bonus pending:", aliceBonusPending);
-        console.log("Bob bonus pending:", bobBonusPending);
+        console.log("Total minted:", totalMinted);
+        console.log("Contract received:", contractReceived);
+        console.log("Fee collector received:", feeCollectorReceived);
 
-        // THE BUG: Both get the same bonus amount
-        // But Alice deposited before bonus existed, Bob deposited after
-        // They should have different bonus amounts
+        // Calculate expected rewards
+        uint256 blocksPassed = 9; // From block 1 to 10
+        uint256 expectedReward = (blocksPassed * INITIAL_REWARD_PER_BLOCK * 1000) / 1500;
+        uint256 expectedFee = expectedReward / 10;
+        uint256 expectedTotalMint = expectedReward + expectedFee;
 
-        assertEq(aliceBonusPending, bobBonusPending, "Both get same bonus despite different deposit times");
+        console.log("Expected reward for users:", expectedReward);
+        console.log("Expected fee for collector:", expectedFee);
+        console.log("Expected total mint:", expectedTotalMint);
+
+        // The bug: Contract only accounts for 'expectedReward' but actually mints 'expectedTotalMint'
+        (,, uint256 accRewardPerShare,,,,,) = farm.poolInfo(0);
+        uint256 accountedRewards = (100e18 * accRewardPerShare) / 1e12;
+
+        console.log("Accounted rewards in pool:", accountedRewards);
+        console.log("Actual tokens in contract:", finalContractBalance);
+
+        // The contract accounts for less than it actually has
+        assertLt(accountedRewards, finalContractBalance, "Contract accounts for less tokens than it holds");
+
+        // The fee collector received tokens that weren't accounted for
+        assertEq(feeCollectorReceived, expectedFee, "Fee collector received unaccounted tokens");
     }
 }

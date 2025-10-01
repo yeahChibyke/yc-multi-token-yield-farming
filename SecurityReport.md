@@ -1,4 +1,4 @@
-## Bonus Reward Backdating Vulnerability
+## Issue 1 : Bonus Reward Backdating Vulnerability
 
 ### Summary
 
@@ -32,4 +32,68 @@ Here's what happens:
     
 ### Recommended Mitigation
 
-Track bonus periods separately and only apply bonuses to deposits made during active bonus periods:
+Track bonus periods separately and only apply bonuses to deposits made during active bonus periods.
+
+## Issue 2: Fee Collection Inflation Vulnerability
+
+### Summary
+
+The contract mints 10% extra reward tokens to the fee collector, but this additional minting is not accounted for in the reward calculations. This creates token inflation where more tokens are minted than are allocated to users, breaking the reward accounting system.
+
+### Vulnerability Details
+
+In the `updatePool()` function, the contract does this:
+
+```
+    uint256 reward = (multiplier * rewardPerBlock * pool.allocPoint) / totalAllocPoint;
+
+    // Mint rewards
+    rewardToken.mint(address(this), reward);          // Mint for users
+    rewardToken.mint(feeCollector, reward / 10);     // Mint extra 10% for fees
+
+    pool.accRewardPerShare += (reward * 1e12) / stakingSupply;
+```
+
+**The Problem:**
+
+- Only reward amount is added to accRewardPerShare
+
+- But reward + reward/10 tokens are actually minted
+
+- The contract owes users reward tokens based on accounting, but has minted 1.1 * reward tokens
+
+- This creates a mismatch between allocated rewards and actual token supply
+
+### Impact
+
+- Accounting Mismatch: Contract tracks fewer rewards than actually exist
+
+- Incorrect Reward Rates: accRewardPerShare underestimates true reward distribution
+
+- Potential Insolvency: If all users withdraw, there may not be enough tokens to cover accounted rewards
+
+- Hidden Inflation: 10% of all minted rewards are unaccounted for in the reward system
+
+### Recommended Mitigation
+
+The protocol should mint only the accounted amount:
+
+```
+    function updatePool(uint256 _pid) public {
+        // ... existing calculations ...
+        
+        uint256 reward = (multiplier * rewardPerBlock * pool.allocPoint) / totalAllocPoint;
+        
+        // Mint only the reward amount to contract
+        rewardToken.mint(address(this), reward);
+        
+        // Update accounting with the full reward amount
+        pool.accRewardPerShare += (reward * 1e12) / stakingSupply;
+        
+        // Fee is taken from the contract balance, not minted separately
+        uint256 feeAmount = reward / 10;
+        safeRewardTransfer(feeCollector, feeAmount);
+        
+        pool.lastRewardBlock = block.number;
+    }
+```
