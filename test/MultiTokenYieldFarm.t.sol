@@ -91,7 +91,7 @@ contract YieldFarmTest is Test {
 
     // ============ Basic Functionality Tests ============
 
-    function testInitialState() public {
+    function testInitialState() public view {
         assertEq(farm.poolLength(), 2);
         assertEq(farm.rewardPerBlock(), INITIAL_REWARD_PER_BLOCK);
         assertEq(farm.startBlock(), START_BLOCK);
@@ -120,7 +120,7 @@ contract YieldFarmTest is Test {
         assertEq(lpToken1.balanceOf(address(farm)), depositAmount);
 
         // Check user info
-        (uint256 amount, uint256 rewardDebt, uint256 bonusRewardDebt, uint256 lastDepositTime, address referrer,) =
+        (uint256 amount, uint256 rewardDebt, /*uint256 bonusRewardDebt*/, uint256 lastDepositTime, address referrer,) =
             farm.userInfo(0, alice);
 
         assertEq(amount, depositAmount);
@@ -208,7 +208,6 @@ contract YieldFarmTest is Test {
         assertEq(accRewardPerShare, 0); // Should remain 0, not cause revert
     }
 
-
     function testMinimalAmounts() public {
         vm.roll(START_BLOCK + 1);
 
@@ -231,7 +230,7 @@ contract YieldFarmTest is Test {
         vm.roll(START_BLOCK + 1);
 
         // Test with maximum possible deposit
-        uint256 maxDeposit = type(uint256).max / 2; 
+        uint256 maxDeposit = type(uint256).max / 2;
         lpToken1.mint(alice, maxDeposit);
 
         vm.prank(alice);
@@ -262,7 +261,6 @@ contract YieldFarmTest is Test {
 
         console.log("Primary pending after bonus expiration:", pending);
         console.log("Bonus pending after expiration:", bonusPending);
-
     }
 
     function testPendingRewardsCalculation() public {
@@ -284,5 +282,39 @@ contract YieldFarmTest is Test {
 
         // Should be close (within rounding errors)
         assertApproxEqRel(pending, expectedReward, 0.01e18); // 1% tolerance
+    }
+
+    function test_bonus_backdating_issue() public {
+        vm.roll(START_BLOCK + 10); // Block 10
+
+        // Alice deposits early - NO BONUS ACTIVE
+        vm.prank(alice);
+        farm.deposit(0, 100e18, address(0));
+
+        // Move forward some blocks
+        vm.roll(START_BLOCK + 50);
+
+        // NOW owner sets up bonus token starting from current block
+        farm.setBonusToken(0, bonusToken, 1e18, START_BLOCK + 100);
+
+        // Bob deposits AFTER bonus is set up
+        vm.prank(bob);
+        farm.deposit(0, 100e18, address(0));
+
+        // Move to block 70 - both have staked for 20 blocks during bonus period
+        vm.roll(START_BLOCK + 70);
+
+        // Check pending rewards
+        ( /*uint256 alicePending*/ , uint256 aliceBonusPending) = farm.pendingRewards(0, alice);
+        ( /*uint256 bobPending*/ , uint256 bobBonusPending) = farm.pendingRewards(0, bob);
+
+        console.log("Alice bonus pending:", aliceBonusPending);
+        console.log("Bob bonus pending:", bobBonusPending);
+
+        // THE BUG: Both get the same bonus amount
+        // But Alice deposited before bonus existed, Bob deposited after
+        // They should have different bonus amounts
+
+        assertEq(aliceBonusPending, bobBonusPending, "Both get same bonus despite different deposit times");
     }
 }
