@@ -284,66 +284,38 @@ contract YieldFarmTest is Test {
         assertApproxEqRel(pending, expectedReward, 0.01e18); // 1% tolerance
     }
 
-    function testFeeMintingInflation() public {
+    function testTimeMultiplierMintingMismatch() public {
         vm.roll(START_BLOCK + 1);
-
-        // Track initial token supply
-        uint256 initialTotalSupply = rewardToken.totalSupply();
-        uint256 initialContractBalance = rewardToken.balanceOf(address(farm));
-        uint256 initialFeeCollectorBalance = rewardToken.balanceOf(feeCollector);
-
-        console.log("Initial total supply:", initialTotalSupply);
-        console.log("Initial contract balance:", initialContractBalance);
-        console.log("Initial fee collector balance:", initialFeeCollectorBalance);
 
         // Alice deposits
         vm.prank(alice);
         farm.deposit(0, 100e18, address(0));
 
-        // Move forward 10 blocks to accumulate rewards
-        vm.roll(START_BLOCK + 10);
+        // Fast forward 91 days to get 2x multiplier
+        vm.warp(block.timestamp + 91 days);
+        vm.roll(START_BLOCK + 10); // Only 9 blocks of rewards
 
-        // Update pool to mint rewards
+        // Check how much was minted
         farm.updatePool(0);
+        uint256 mintedAmount = rewardToken.balanceOf(address(farm));
 
-        // Check final token amounts
-        uint256 finalTotalSupply = rewardToken.totalSupply();
-        uint256 finalContractBalance = rewardToken.balanceOf(address(farm));
-        uint256 finalFeeCollectorBalance = rewardToken.balanceOf(feeCollector);
+        // Check what Alice should get with 2x multiplier
+        (uint256 pending,) = farm.pendingRewards(0, alice);
 
-        console.log("Final total supply:", finalTotalSupply);
-        console.log("Final contract balance:", finalContractBalance);
-        console.log("Final fee collector balance:", finalFeeCollectorBalance);
+        console.log("Tokens minted to contract:", mintedAmount);
+        console.log("Alice's pending rewards (with 2x multiplier):", pending);
 
-        uint256 totalMinted = finalTotalSupply - initialTotalSupply;
-        uint256 contractReceived = finalContractBalance - initialContractBalance;
-        uint256 feeCollectorReceived = finalFeeCollectorBalance - initialFeeCollectorBalance;
+        // THE BUG: Alice is owed more than was minted
+        assertGt(pending, mintedAmount, "Contract owes more tokens than it has");
 
-        console.log("Total minted:", totalMinted);
-        console.log("Contract received:", contractReceived);
-        console.log("Fee collector received:", feeCollectorReceived);
+        // Try to withdraw - this will fail or pay partial due to safeRewardTransfer
+        vm.prank(alice);
+        farm.withdraw(0, 100e18);
 
-        // Calculate expected rewards
-        uint256 blocksPassed = 9; // From block 1 to 10
-        uint256 expectedReward = (blocksPassed * INITIAL_REWARD_PER_BLOCK * 1000) / 1500;
-        uint256 expectedFee = expectedReward / 10;
-        uint256 expectedTotalMint = expectedReward + expectedFee;
+        uint256 aliceReceived = rewardToken.balanceOf(alice);
+        console.log("Alice actually received:", aliceReceived);
 
-        console.log("Expected reward for users:", expectedReward);
-        console.log("Expected fee for collector:", expectedFee);
-        console.log("Expected total mint:", expectedTotalMint);
-
-        // The bug: Contract only accounts for 'expectedReward' but actually mints 'expectedTotalMint'
-        (,, uint256 accRewardPerShare,,,,,) = farm.poolInfo(0);
-        uint256 accountedRewards = (100e18 * accRewardPerShare) / 1e12;
-
-        console.log("Accounted rewards in pool:", accountedRewards);
-        console.log("Actual tokens in contract:", finalContractBalance);
-
-        // The contract accounts for less than it actually has
-        assertLt(accountedRewards, finalContractBalance, "Contract accounts for less tokens than it holds");
-
-        // The fee collector received tokens that weren't accounted for
-        assertEq(feeCollectorReceived, expectedFee, "Fee collector received unaccounted tokens");
+        // Alice didn't get full multiplied amount due to insufficient mint
+        assertLt(aliceReceived, pending, "Alice didn't get full multiplied rewards");
     }
 }

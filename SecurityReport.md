@@ -97,3 +97,55 @@ The protocol should mint only the accounted amount:
         pool.lastRewardBlock = block.number;
     }
 ```
+
+## Issue 3: Time Multiplier Minting Mismatch Vulnerability
+
+### Summary
+
+The contract applies time-based multipliers when calculating rewards for users during withdrawals, but these multipliers are not considered when minting the actual reward tokens. This creates a situation where the contract mints fewer tokens than it needs to pay out, potentially leading to insolvency.
+
+### Vulnerability Details
+
+In the `withdraw()` function, rewards are calculated with a time multiplier:
+
+```
+    // Calculate pending rewards with time multiplier
+    uint256 pending = ((user.amount * pool.accRewardPerShare) / 1e12) - user.rewardDebt;
+    uint256 timeMultiplier = getTimeMultiplier(user.lastDepositTime);
+    pending = (pending * timeMultiplier) / 100;  // Apply multiplier
+```
+
+However, in `updatePool()`, rewards are minted without considering these multipliers:
+
+```
+    uint256 reward = (multiplier * rewardPerBlock * pool.allocPoint) / totalAllocPoint;
+    rewardToken.mint(address(this), reward);  // Mint base amount only
+```
+
+**The Problem:**
+
+- Contract mints tokens based on base reward rates
+
+- But pays out tokens multiplied by time multipliers (up to 2x)
+
+- Over time, the contract will owe more tokens than it has minted
+
+- Users with long-term stakes will receive more rewards than were ever minted
+
+### Impact
+
+- Contract Insolvency: The contract cannot pay all promised rewards
+
+- Fund Loss: Later users may not receive their full rewards
+
+- Accounting Break: Reward tracking becomes meaningless
+
+- Unfair Distribution: Early withdrawers get full rewards, late withdrawers get nothing when contract is empty
+
+### Recommended Mitigation
+
+The protocol should either:
+
+- Remove time multipliers from reward calculation, or
+- Mint rewards accounting for potential multipliers, or 
+- Track time multipliers seperatley from base rewards
