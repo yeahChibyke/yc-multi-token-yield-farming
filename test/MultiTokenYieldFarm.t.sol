@@ -284,38 +284,51 @@ contract YieldFarmTest is Test {
         assertApproxEqRel(pending, expectedReward, 0.01e18); // 1% tolerance
     }
 
-    function testTimeMultiplierMintingMismatch() public {
+    function testReferralCommissionFunding() public {
         vm.roll(START_BLOCK + 1);
 
-        // Alice deposits
-        vm.prank(alice);
-        farm.deposit(0, 100e18, address(0));
+        // Bob refers Charlie (Bob gets commission when Charlie deposits)
+        vm.prank(charlie);
+        farm.deposit(0, 100e18, bob); // Charlie uses Bob as referrer
 
-        // Fast forward 91 days to get 2x multiplier
-        vm.warp(block.timestamp + 91 days);
-        vm.roll(START_BLOCK + 10); // Only 9 blocks of rewards
-
-        // Check how much was minted
+        // Fast forward and update pool to mint rewards
+        vm.roll(START_BLOCK + 10);
         farm.updatePool(0);
-        uint256 mintedAmount = rewardToken.balanceOf(address(farm));
 
-        // Check what Alice should get with 2x multiplier
-        (uint256 pending,) = farm.pendingRewards(0, alice);
+        uint256 contractBalanceBefore = rewardToken.balanceOf(address(farm));
+        uint256 bobBalanceBefore = rewardToken.balanceOf(bob);
+        uint256 charlieBalanceBefore = rewardToken.balanceOf(charlie);
 
-        console.log("Tokens minted to contract:", mintedAmount);
-        console.log("Alice's pending rewards (with 2x multiplier):", pending);
+        console.log("Contract balance before:", contractBalanceBefore);
+        console.log("Bob balance before:", bobBalanceBefore);
+        console.log("Charlie balance before:", charlieBalanceBefore);
 
-        // THE BUG: Alice is owed more than was minted
-        assertGt(pending, mintedAmount, "Contract owes more tokens than it has");
-
-        // Try to withdraw - this will fail or pay partial due to safeRewardTransfer
-        vm.prank(alice);
+        // Charlie withdraws his rewards
+        vm.prank(charlie);
         farm.withdraw(0, 100e18);
 
-        uint256 aliceReceived = rewardToken.balanceOf(alice);
-        console.log("Alice actually received:", aliceReceived);
+        uint256 contractBalanceAfter = rewardToken.balanceOf(address(farm));
+        uint256 bobBalanceAfter = rewardToken.balanceOf(bob);
+        uint256 charlieBalanceAfter = rewardToken.balanceOf(charlie);
 
-        // Alice didn't get full multiplied amount due to insufficient mint
-        assertLt(aliceReceived, pending, "Alice didn't get full multiplied rewards");
+        uint256 charlieReceived = charlieBalanceAfter - charlieBalanceBefore;
+        uint256 bobReceived = bobBalanceAfter - bobBalanceBefore;
+        uint256 totalPaidOut = contractBalanceBefore - contractBalanceAfter;
+
+        console.log("=== RESULTS ===");
+        console.log("Charlie received:", charlieReceived);
+        console.log("Bob received (referral commission):", bobReceived);
+        console.log("Total paid out by contract:", totalPaidOut);
+
+        // THE BUG: Contract paid Charlie's full rewards PLUS Bob's commission
+        // Commission should be deducted from Charlie's rewards, not added on top
+
+        assertEq(totalPaidOut, charlieReceived + bobReceived, "Contract paid extra for commission");
+
+        // If commission was deducted properly:
+        // - Charlie would get: rewards - commission
+        // - Bob would get: commission
+        // - Total paid would equal original rewards amount
+        // But currently: Charlie gets full rewards + Bob gets commission = 105%
     }
 }

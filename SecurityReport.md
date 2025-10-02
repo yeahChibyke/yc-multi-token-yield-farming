@@ -149,3 +149,52 @@ The protocol should either:
 - Remove time multipliers from reward calculation, or
 - Mint rewards accounting for potential multipliers, or 
 - Track time multipliers seperatley from base rewards
+
+## Issue 4: Incorrect Referral Commission Funding Vulnerability
+
+### Summary
+
+The contract pays referral commissions from the farm's reward pool instead of deducting them from the user's actual rewards. This means the farm subsidizes referral payments, allowing users to receive their full rewards while referrers get additional "free" tokens from the contract.
+
+### Vulnerability Details
+
+In the `withdraw()` function, referral commissions are handled incorrectly:
+
+```
+    if (pending > 0) {
+        safeRewardTransfer(msg.sender, pending);  // User gets full rewards
+        
+        // Pay referral commission FROM CONTRACT
+        if (user.referrer != address(0)) {
+            uint256 commission = (pending * referralCommission) / 10000;
+            safeRewardTransfer(user.referrer, commission);  // Extra tokens from contract
+            userInfo[_pid][user.referrer].referralRewards += commission;
+            emit ReferralCommissionPaid(msg.sender, user.referrer, commission);
+        }
+    }
+```
+
+**The Problem:**
+
+- User receives 100% of their pending rewards
+
+- Referrer receives an ADDITIONAL 5% commission from the contract
+
+- The contract pays out 105% of what should be paid for each referred user
+
+- This creates token inflation and unfair advantage for referred users
+
+### Impact
+
+- Token Inflation: Contract pays out more rewards than allocated
+
+- Unfair Advantage: Referred users effectively get bonus rewards
+
+- Fund Drain: Contract depletes faster than intended
+
+- Economic Imbalance: Referral system costs the protocol instead of the user
+
+### Recommended Mitigation
+
+Deduct commission from user's rewards
+
